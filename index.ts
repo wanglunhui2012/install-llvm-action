@@ -3,6 +3,8 @@ import * as exec from "@actions/exec";
 import * as io from "@actions/io";
 import * as tc from "@actions/tool-cache";
 import * as path from "path";
+import * as http from "http";
+import * as https from "https";
 
 export interface Options {
   version: string,
@@ -15,6 +17,7 @@ export interface Options {
   env: boolean,
 }
 
+// 获取参数
 function getOptions(): Options {
   return {
     version: core.getInput("version"),
@@ -106,13 +109,31 @@ function getSpecificVersions(version: string): string[] {
 //================================================
 
 /** Gets a LLVM download URL for GitHub release mirror like artifactory. */
-function getDownloadUrl(baseUrl: string, version: string, prefix: string, suffix: string): string {
+function getDownloadUrl(baseUrl: string, version: string, prefix: string, suffix: string): string | null {
   const file = `${prefix}${version}${suffix}`;
-  return `${baseUrl}/${file}`;
+  const url = `${baseUrl}/${file}`;
+
+  getUrlStatusCode(url).then(res => {
+    return res === 404 ? null : url;
+  }).catch(err => {
+    return null;
+  })
+}
+
+async function getUrlStatusCode(url: string): Promise<number | undefined> {
+  return new Promise((resolve,reject) => {
+    https.get(url, {
+      method: 'HEAD'
+    }, (res: http.IncomingMessage) => {
+      resolve(res.statusCode)
+    }).on('error', (e: Error) => {
+      reject(e)
+    });
+  })
 }
 
 /** Gets a LLVM download URL for GitHub. */
-function getGitHubUrl(version: string, prefix: string, suffix: string): string {
+function getGitHubUrl(version: string, prefix: string, suffix: string): string | null {
   return getDownloadUrl(`https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}`, version, prefix, suffix);
 }
 
@@ -341,14 +362,17 @@ const DEFAULT_WIN32_DIRECTORY = "C:/Program Files/LLVM";
 
 async function install(options: Options): Promise<void> {
   const platform = process.platform;
+  // 获取对应平台的版本和下载地址
   const [specificVersion, url] = getSpecificVersionAndUrl(platform, options);
   core.setOutput("version", specificVersion);
 
   console.log(`Installing LLVM and Clang ${options.version} (${specificVersion})...`);
   console.log(`Downloading and extracting '${url}'...`);
+  // 下载 llvm 压缩包
   const archive = await tc.downloadTool(url, '', options.auth);
 
   let exit;
+  // 解压到 options.directory 目录
   if (platform === "win32") {
     exit = await exec.exec("7z", ["x", archive, `-o${options.directory}`, "-y"]);
   } else {
@@ -365,6 +389,7 @@ async function install(options: Options): Promise<void> {
 }
 
 async function run(options: Options): Promise<void> {
+  // 安装路径解析
   if (!options.directory) {
     options.directory =  process.platform === "win32"
       ? DEFAULT_WIN32_DIRECTORY
@@ -376,8 +401,11 @@ async function run(options: Options): Promise<void> {
   if (options.cached) {
     console.log(`Using cached LLVM and Clang ${options.version}...`);
   } else {
+    // 安装 llvm
     await install(options);
   }
+
+  // 环境变量导出
 
   const bin = path.join(options.directory, "bin");
   const lib = path.join(options.directory, "lib");
@@ -399,6 +427,7 @@ async function run(options: Options): Promise<void> {
 
 async function main() {
   try {
+    // 运行
     await run(getOptions());
   } catch (error: any) {
     console.error(error.stack);
@@ -406,6 +435,8 @@ async function main() {
   }
 }
 
-if (!module.parent) {
+// 入口
+if (!module.parent) { // !module.parent 用于在没有 require 的情况下执行代码，此时没有 parent，防止改文件被其他项目引入时运行
+  // 运行
   main();
 }

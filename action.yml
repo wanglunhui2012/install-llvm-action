@@ -5,6 +5,7 @@ branding:
   icon: "arrow-down-circle"
   color: "black"
 
+# 输入
 inputs:
   version:
     description: "The version of LLVM and Clang binaries to install."
@@ -35,6 +36,7 @@ outputs:
   version:
     description: "The full version of LLVM and Clang binaries installed."
 
+# 启动方式 node dist/index.js
 runs:
-  using: "node16"
-  main: "dist/index.js"
+  using: "node16" # node 版本
+  main: "dist/index.js" # 入口，必须是一个打包文件，不能在里面再去打包
